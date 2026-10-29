@@ -1,0 +1,10 @@
+{
+  "bankroll_start": 1000.0,
+  "kelly_fraction": 0.125,
+  "max_bet_pct": 0.01,
+  "min_ev": 0.03,
+  "market_weight": 0.5,
+  "books": ["draftkings", "fanduel", "betmgm", "williamhill_us", "betrivers", "espnbet"],
+  "markets": ["ml", "total"],
+  "timezone": "America/Chicago"
+}

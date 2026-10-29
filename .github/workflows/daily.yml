@@ -1,0 +1,60 @@
+name: MLB daily picks
+
+on:
+  schedule:
+    - cron: "0 15 * 3-10 *"    # 10:00 CT: settle yesterday, price today's slate at the morning lines
+    - cron: "30 17 * 3-10 *"   # 12:30 CT: odds snapshot (closing lines for day games)
+    - cron: "30 22 * 3-10 *"   # 17:30 CT: odds snapshot (closing lines for night games)
+  workflow_dispatch:
+    inputs:
+      command:
+        description: "picks, snapshot, settle or catchup"
+        default: picks
+      date:
+        description: "YYYY-MM-DD (optional)"
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: moneyball
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Pick the command
+        id: cmd
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "cmd=${{ inputs.command }}" >> "$GITHUB_OUTPUT"
+            echo "date=${{ inputs.date }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.schedule }}" = "0 15 * 3-10 *" ]; then
+            echo "cmd=picks" >> "$GITHUB_OUTPUT"
+          else
+            echo "cmd=snapshot" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Run
+        run: |
+          ARGS=""
+          if [ -n "${{ steps.cmd.outputs.date }}" ]; then ARGS="--date ${{ steps.cmd.outputs.date }}"; fi
+          python -m moneyball.live.runner ${{ steps.cmd.outputs.cmd }} $ARGS
+      - name: Save state, logs and picks
+        run: |
+          git config user.name "moneyball-bot"
+          git config user.email "moneyball-bot@users.noreply.github.com"
+          git add state/mlb_state.pkl logs picks || true
+          git diff --cached --quiet || git commit -m "${{ steps.cmd.outputs.cmd }} $(date -u +%F)"
+          git push
