@@ -55,6 +55,6 @@ jobs:
         run: |
           git config user.name "moneyball-bot"
           git config user.email "moneyball-bot@users.noreply.github.com"
-          git add state/mlb_state.pkl logs picks || true
+          for f in state/mlb_state.pkl logs picks; do if [ -e "$f" ]; then git add "$f"; fi; done
           git diff --cached --quiet || git commit -m "${{ steps.cmd.outputs.cmd }} $(date -u +%F)"
           git push
