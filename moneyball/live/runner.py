@@ -95,19 +95,22 @@ def catch_up(st, through: date, p: Paths, verbose=True):
 
 # ---------------------------------------------------------------- odds
 def fetch_odds(books: list[str], day: date | None = None) -> pd.DataFrame:
-    """The Odds API when ODDS_API_KEY is set, otherwise Action Network's keyless feed for `day`."""
+    """The Odds API when ODDS_API_KEY is set and works, otherwise Action Network's keyless feed for `day`."""
     key = os.environ.get("ODDS_API_KEY")
-    if not key:
-        day = day or datetime.now(ZoneInfo(DEFAULT_CONFIG["timezone"])).date()
-        odds = action_network.fetch(day, books)
-        print(f"Odds from Action Network (no ODDS_API_KEY): {odds.event_id.nunique()} games, "
-              f"books {sorted(odds.book.unique())}")
-        return odds
-    r = requests.get("https://api.the-odds-api.com/v4/sports/baseball_mlb/odds", timeout=30, params={
-        "apiKey": key, "markets": "h2h,totals", "oddsFormat": "american", "bookmakers": ",".join(books)})
-    r.raise_for_status()
-    print(f"Odds API credits remaining: {r.headers.get('x-requests-remaining')}")
-    return flatten_odds(r.json())
+    if key:
+        try:
+            r = requests.get("https://api.the-odds-api.com/v4/sports/baseball_mlb/odds", timeout=30, params={
+                "apiKey": key, "markets": "h2h,totals", "oddsFormat": "american", "bookmakers": ",".join(books)})
+            r.raise_for_status()
+            print(f"Odds API credits remaining: {r.headers.get('x-requests-remaining')}")
+            return flatten_odds(r.json())
+        except requests.RequestException as e:
+            print(f"Odds API failed ({e.__class__.__name__}: {getattr(e.response, 'status_code', '')}), "
+                  "falling back to Action Network")
+    day = day or datetime.now(ZoneInfo(DEFAULT_CONFIG["timezone"])).date()
+    odds = action_network.fetch(day, books)
+    print(f"Odds from Action Network: {odds.event_id.nunique()} games, books {sorted(odds.book.unique())}")
+    return odds
 
 
 def flatten_odds(events: list[dict]) -> pd.DataFrame:
