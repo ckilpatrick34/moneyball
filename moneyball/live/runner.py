@@ -4,6 +4,7 @@
     python -m moneyball.live.runner snapshot          # odds snapshot only (for closing lines)
     python -m moneyball.live.runner settle            # grade bets, compute CLV, print record
     python -m moneyball.live.runner catchup [--date]  # roll the feature state forward (first run: whole 2026)
+    python -m moneyball.live.runner oddscheck [--date] # fetch and print odds only, writes nothing
 
 Files (under --home, default the repo root):
     config.json                 bankroll, books, thresholds
@@ -30,7 +31,7 @@ import requests
 
 from ..model import blend, derive, load_models
 from ..odds import american_to_decimal, fair_probs, logit
-from . import statsapi, weather
+from . import action_network, statsapi, weather
 from .parks import PARKS, std_abbr
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -93,10 +94,15 @@ def catch_up(st, through: date, p: Paths, verbose=True):
 
 
 # ---------------------------------------------------------------- odds
-def fetch_odds(books: list[str]) -> pd.DataFrame:
+def fetch_odds(books: list[str], day: date | None = None) -> pd.DataFrame:
+    """The Odds API when ODDS_API_KEY is set, otherwise Action Network's keyless feed for `day`."""
     key = os.environ.get("ODDS_API_KEY")
     if not key:
-        raise RuntimeError("ODDS_API_KEY is not set")
+        day = day or datetime.now(ZoneInfo(DEFAULT_CONFIG["timezone"])).date()
+        odds = action_network.fetch(day, books)
+        print(f"Odds from Action Network (no ODDS_API_KEY): {odds.event_id.nunique()} games, "
+              f"books {sorted(odds.book.unique())}")
+        return odds
     r = requests.get("https://api.the-odds-api.com/v4/sports/baseball_mlb/odds", timeout=30, params={
         "apiKey": key, "markets": "h2h,totals", "oddsFormat": "american", "bookmakers": ",".join(books)})
     r.raise_for_status()
@@ -200,7 +206,7 @@ def make_picks(day: date, p: Paths, cfg: dict, odds: pd.DataFrame | None = None,
     if missing and weather_fn is None:
         st.hands.update(statsapi.people_hands(missing))
     if odds is None:
-        odds = fetch_odds(cfg["books"])
+        odds = fetch_odds(cfg["books"], day)
         if not dry_run:
             save_snapshot(odds, p)
     events = odds.drop_duplicates("event_id")[["event_id", "home", "away", "commence_utc"]]
@@ -379,7 +385,7 @@ def report(bets: pd.DataFrame) -> pd.DataFrame:
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="moneyball.live.runner")
-    ap.add_argument("cmd", choices=["picks", "snapshot", "settle", "catchup"])
+    ap.add_argument("cmd", choices=["picks", "snapshot", "settle", "catchup", "oddscheck"])
     ap.add_argument("--date")
     ap.add_argument("--home", default=str(ROOT))
     ap.add_argument("--dry-run", action="store_true")
@@ -397,8 +403,16 @@ def main(argv=None):
                    else datetime.now(ZoneInfo(cfg["timezone"])).date() - timedelta(days=1))
         catch_up(st, through, p)
         p.state.write_bytes(pickle.dumps(st))
+    elif a.cmd == "oddscheck":
+        day = (datetime.strptime(a.date, "%Y-%m-%d").date() if a.date
+               else datetime.now(ZoneInfo(cfg["timezone"])).date())
+        odds = fetch_odds(cfg["books"], day)
+        for ev, o in odds.groupby("event_id", sort=False):
+            mv = market_view(o)
+            print(f"{o.away.iloc[0]} @ {o.home.iloc[0]}: p_home {mv.get('p_home', float('nan')):.3f}, "
+                  f"total {mv.get('total_line')}, best home {mv.get('best_home')}, best away {mv.get('best_away')}")
     elif a.cmd == "snapshot":
-        save_snapshot(fetch_odds(cfg["books"]), p)
+        save_snapshot(fetch_odds(cfg["books"], datetime.now(ZoneInfo(cfg["timezone"])).date()), p)
     else:
         settle(p)
 

@@ -78,8 +78,10 @@ python -m moneyball.cli snapshot-odds --league mlb
 Setup, once:
 
 1. Push this folder to a private GitHub repo.
-2. In the repo, go to **Settings → Secrets and variables → Actions** and add `ODDS_API_KEY`. Optionally
-   add `DISCORD_WEBHOOK_URL` to get the card in Discord.
+2. Odds work with no key: without `ODDS_API_KEY` the runner pulls DraftKings, FanDuel, BetMGM, Caesars,
+   BetRivers, bet365 and Fanatics prices from Action Network's public feed. Adding an `ODDS_API_KEY` secret
+   (**Settings → Secrets and variables → Actions**) switches to The Odds API instead. Optionally add
+   `DISCORD_WEBHOOK_URL` to get the card in Discord.
 3. Edit `config.json`: set `bankroll_start` and list only the `books` you actually have accounts with
    (Odds API keys: draftkings, fanduel, betmgm, williamhill_us = Caesars, betrivers, espnbet, fanatics, ...).
 4. The state in `state/mlb_state.pkl` is already current through the 2026 season (2,470 games, scored
@@ -87,7 +89,7 @@ Setup, once:
    on its own; a manual `catchup` run is only needed after a long gap.
 
 After that it runs on its own: picks at 10:00 CT, odds snapshots at 12:30 and 17:30 CT, March through
-October. That uses about 190 Odds API credits a month (the free tier has 500).
+October. With an Odds API key that uses about 190 credits a month (the free tier has 500).
 
 Rebuild the models and state from scratch with `research/train_live.py`.
 

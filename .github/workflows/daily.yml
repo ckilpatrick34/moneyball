@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       command:
-        description: "picks, snapshot, settle or catchup"
+        description: "picks, snapshot, settle, catchup or oddscheck"
         default: picks
       date:
         description: "YYYY-MM-DD (optional)"

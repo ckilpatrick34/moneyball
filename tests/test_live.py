@@ -99,11 +99,26 @@ def test_end_to_end_picks_settle_clv(tmp_path):
 @pytest.mark.skipif(not HAVE_ARTIFACTS, reason="run research/train_live.py first")
 def test_catch_up_feeds_boxscores(tmp_path, monkeypatch):
     st = pickle.loads((ROOT / "state" / "mlb_state.pkl").read_bytes())
-    before = st.pit.get(COLE, pd.Timestamp("2025-11-05"))["pa"]
-    games = [{"game_pk": 9, "date": "2025-11-05", "state": "Final", "detailed": "Final", "home": "NYY", "away": "DET",
-              "home_score": 3, "away_score": 2, "start_utc": "2025-11-05T23:05:00Z"}]
-    monkeypatch.setattr(statsapi, "schedule", lambda a, b, game_types="R": games if a <= "2025-11-05" <= b else [])
+    before = st.pit.get(COLE, pd.Timestamp("2026-11-05"))["pa"]
+    games = [{"game_pk": 9, "date": "2026-11-05", "state": "Final", "detailed": "Final", "home": "NYY", "away": "DET",
+              "home_score": 3, "away_score": 2, "start_utc": "2026-11-05T23:05:00Z"}]
+    monkeypatch.setattr(statsapi, "schedule", lambda a, b, game_types="R": games if a <= "2026-11-05" <= b else [])
     monkeypatch.setattr(statsapi, "boxscore", lambda pk, cache=None: boxscore_payload())
-    n = runner.catch_up(st, date(2025, 11, 10), runner.Paths(tmp_path), verbose=False)
+    n = runner.catch_up(st, date(2026, 11, 10), runner.Paths(tmp_path), verbose=False)
     assert n == 1 and st.pit.v[COLE]["pa"] == pytest.approx(before + 25)
-    assert st.last_update == pd.Timestamp("2025-11-10")
+    assert st.last_update == pd.Timestamp("2026-11-10")
+
+
+def test_action_network_flatten_matches_odds_api_format():
+    from moneyball.live import action_network
+    payload = {"games": [{"id": 1, "start_time": "2026-05-01T23:05:00.000Z", "home_team_id": 2, "away_team_id": 1,
+                          "teams": [{"id": 1, "abbr": "ATH"}, {"id": 2, "abbr": "NYY"}],
+                          "odds": [{"book_id": 68, "type": "game", "ml_home": -150, "ml_away": 130, "total": 8.5,
+                                    "over": -110, "under": -110},
+                                   {"book_id": 15, "type": "game", "ml_home": -148, "ml_away": 128}]}]}
+    df = action_network.flatten(payload)
+    assert set(df.book) == {"draftkings"}                       # consensus line dropped
+    assert (df.away == "OAK").all() and (df.home == "NYY").all()
+    assert df.commence_utc.iloc[0] == "2026-05-01T23:05:00Z"
+    mv = runner.market_view(df)
+    assert mv["total_line"] == 8.5 and 0.55 < mv["p_home"] < 0.6 and mv["best_home"] == (-150.0, "draftkings")
